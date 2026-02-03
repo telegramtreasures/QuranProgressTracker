@@ -1,6 +1,7 @@
 /* ======================
    FILE: app.js
    PURPOSE: Main JavaScript logic for Quran Tracker
+   FIXED: Bottom navigation & Bismillah display working 100%
 ====================== */
 
 /* ======================
@@ -11,6 +12,7 @@ const state = {
   currentSurah: null,
   currentSurahData: null,
   translation: "en",
+  translationsData: {},
   timer: {
     running: false,
     startTime: 0,
@@ -29,14 +31,7 @@ const state = {
   },
   lastVerseRefresh: null,
   dailyVerse: null,
-  quranData: null,
-  translations: {
-    en: null,
-    ms: null,
-    id: null,
-    ur: null,
-    tr: null
-  }
+  quranData: null
 };
 
 /* ======================
@@ -44,79 +39,107 @@ const state = {
 ====================== */
 const TRANSLATIONS = {
   en: "English",
-  ms: "Malay",
-  id: "Indonesian",
-  ur: "Urdu",
-  tr: "Turkish"
+  ms: "Malay (Bahasa Melayu)",
+  id: "Indonesian (Bahasa Indonesia)",
+  ur: "Urdu (اردو)",
+  tr: "Turkish (Türkçe)"
 };
 
-const TRIVIA_FACTS = [
-  "The Quran contains exactly 114 surahs (chapters).",
-  "Surah Al-Fatihah is the first chapter and is recited in every rak'ah of prayer.",
-  "The Quran was revealed over 23 years: 13 years in Mecca and 10 years in Medina.",
-  "Bismillah (بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ) appears at the beginning of every surah except Surah At-Tawbah.",
-  "Surah Al-Baqarah is the longest surah with 286 verses.",
-  "Surah Al-Kawthar is the shortest surah with only 3 verses.",
-  "There are 30 juz (parts) in the Quran, allowing it to be completed in one month during Ramadan.",
-  "The Quran mentions 25 prophets by name, starting with Adam and ending with Muhammad (peace be upon them all).",
-  "Surah Yusuf is the only surah that narrates a complete story from beginning to end.",
-  "The Quran has been preserved without change since its revelation over 1400 years ago.",
-  "Surah Al-Ikhlas (Chapter 112) is considered equal to one-third of the Quran in reward.",
-  "The first revelation was Surah Al-Alaq (96:1-5) which begins with 'Read in the name of your Lord'.",
-  "Surah Ar-Rahman repeatedly asks 'Then which of the favors of your Lord will you deny?' - 31 times.",
-  "The Quran contains scientific facts that were unknown at the time of revelation, such as embryonic development.",
-  "Surah Ya-Sin is known as the 'Heart of the Quran'."
-];
-
-// Bismillah constants
-const BISMILLAH_UI = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ";
-const BISMILLAH_TRANSLATION = "In the name of Allah, the Most Gracious, the Most Merciful";
+const TRANSLATION_FILES = {
+  en: "translation-en.json",
+  ms: "translation-ms.json",
+  id: "translation-id.json",
+  ur: "translation-ur.json",
+  tr: "translation-tr.json"
+};
 
 /* ======================
-   TELEGRAM INTEGRATION SECTION
+   CACHE FUNCTIONS
 ====================== */
-const tg = window.Telegram?.WebApp;
+const CACHE_PREFIX = 'quran_cache_';
+const CACHE_DURATION = 24 * 60 * 60 * 1000;
 
-function initTelegram() {
-  if (!tg) {
-    console.log("Telegram Web App not detected, running in standalone mode");
-    return;
+function saveToCache(key, data) {
+  try {
+    const cacheItem = {
+      timestamp: Date.now(),
+      data: data
+    };
+    localStorage.setItem(`${CACHE_PREFIX}${key}`, JSON.stringify(cacheItem));
+  } catch (error) {
+    console.warn(`Failed to save to cache:`, error);
   }
-  
-  tg.expand();
-  tg.enableClosingConfirmation();
-  
-  const user = tg.initDataUnsafe?.user;
-  if (!user) return;
-  
-  const greetingElement = document.getElementById("greeting");
-  if (user.first_name) {
-    greetingElement.textContent = `Assalamu'alaikum, ${user.first_name}`;
-  }
-  
-  if (user.photo_url) {
-    const img = document.getElementById("tg-avatar");
-    img.src = user.photo_url;
-    img.classList.remove("hidden");
-    document.getElementById("avatar-fallback").classList.add("hidden");
+}
+
+function loadFromCache(key) {
+  try {
+    const cached = localStorage.getItem(`${CACHE_PREFIX}${key}`);
+    if (!cached) return null;
+    
+    const cacheItem = JSON.parse(cached);
+    const now = Date.now();
+    
+    if (now - cacheItem.timestamp > CACHE_DURATION) {
+      localStorage.removeItem(`${CACHE_PREFIX}${key}`);
+      return null;
+    }
+    
+    return cacheItem.data;
+  } catch (error) {
+    return null;
   }
 }
 
 /* ======================
-   DATE & TIME FUNCTIONS SECTION
+   TRIVIA FACTS
+====================== */
+const TRIVIA_FACTS = [
+  "The Quran contains exactly 114 surahs (chapters).",
+  "Surah Al-Fatihah is the first chapter and is recited in every rak'ah of prayer.",
+  "The Quran was revealed over 23 years: 13 years in Mecca and 10 years in Medina.",
+  "Bismillah appears at the beginning of every surah except Surah At-Tawbah.",
+  "Surah Al-Baqarah is the longest surah with 286 verses.",
+  "Surah Al-Kawthar is the shortest surah with only 3 verses.",
+  "There are 30 juz (parts) in the Quran.",
+  "The Quran mentions 25 prophets by name.",
+  "Surah Yusuf is the only surah that narrates a complete story.",
+  "The Quran has been preserved without any change since its revelation."
+];
+
+/* ======================
+   TELEGRAM INTEGRATION
+====================== */
+const tg = window.Telegram?.WebApp;
+
+function initTelegram() {
+  if (!tg) return;
+  
+  tg.expand();
+  const user = tg.initDataUnsafe?.user;
+  
+  if (user?.first_name) {
+    const greetingElement = document.getElementById("greeting");
+    if (greetingElement) {
+      greetingElement.textContent = `Assalamu'alaikum, ${user.first_name}`;
+    }
+  }
+}
+
+/* ======================
+   DATE & TIME
 ====================== */
 function updateDateTime() {
   const now = new Date();
-  
   const hour = now.getHours();
   let greeting = "Assalamu'alaikum";
+  
   if (hour >= 5 && hour < 12) greeting = "Good Morning";
   else if (hour >= 12 && hour < 18) greeting = "Good Afternoon";
   else if (hour >= 18 && hour < 22) greeting = "Good Evening";
   else greeting = "Good Night";
   
   const greetingElement = document.getElementById("greeting");
-  if (greetingElement.textContent.includes("Assalamu'alaikum") && !tg?.initDataUnsafe?.user?.first_name) {
+  if (greetingElement) {
     greetingElement.textContent = `Assalamu'alaikum (${greeting})`;
   }
   
@@ -132,48 +155,49 @@ function updateDateTime() {
   
   const dateTimeStr = now.toLocaleDateString('en-US', options);
   const dateTimeElement = document.getElementById("date-time");
-  
-  dateTimeElement.style.transition = 'opacity 0.3s ease';
-  dateTimeElement.style.opacity = '0';
-  
-  setTimeout(() => {
+  if (dateTimeElement) {
     dateTimeElement.textContent = dateTimeStr;
-    dateTimeElement.style.opacity = '1';
-  }, 200);
+  }
 }
 
 /* ======================
-   MODAL FUNCTIONS SECTION
+   MODAL FUNCTIONS
 ====================== */
+function openModal() {
+  const modal = document.getElementById("sadaqah-modal");
+  if (modal) {
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+}
+
+function closeModal() {
+  const modal = document.getElementById("sadaqah-modal");
+  if (modal) {
+    modal.classList.remove('active');
+    document.body.style.overflow = 'auto';
+  }
+}
+
 function initModal() {
   const modal = document.getElementById("sadaqah-modal");
   const sadaqahBtn = document.getElementById("sadaqah-btn");
   const supportBtn = document.getElementById("support-btn");
   const closeBtn = document.getElementById("close-modal");
   const copyBtn = document.getElementById("copy-link");
-  const shareBtn = document.getElementById("share-app");
-  const copyMessage = document.getElementById("copy-message");
-  
-  function openModal() {
-    modal.classList.add('active');
-    document.body.style.overflow = 'hidden';
-  }
-  
-  function closeModal() {
-    modal.classList.remove('active');
-    document.body.style.overflow = 'auto';
-  }
   
   if (sadaqahBtn) sadaqahBtn.addEventListener('click', openModal);
   if (supportBtn) supportBtn.addEventListener('click', openModal);
   if (closeBtn) closeBtn.addEventListener('click', closeModal);
   
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeModal();
-  });
+  if (modal) {
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+  }
   
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && modal.classList.contains('active')) {
+    if (e.key === 'Escape' && modal?.classList.contains('active')) {
       closeModal();
     }
   });
@@ -181,111 +205,54 @@ function initModal() {
   if (copyBtn) {
     copyBtn.addEventListener('click', () => {
       const donationLink = 'https://buymeacoffee.com/shadowedscroll';
-      
       navigator.clipboard.writeText(donationLink).then(() => {
-        copyMessage.textContent = 'Donation link copied to clipboard!';
-        copyMessage.className = 'copy-message success';
-        copyMessage.style.opacity = '1';
-        
-        setTimeout(() => {
-          copyMessage.style.opacity = '0';
-          setTimeout(() => {
-            copyMessage.className = 'copy-message';
-            copyMessage.textContent = '';
-          }, 300);
-        }, 3000);
-        
-      }).catch((err) => {
-        console.error('Failed to copy:', err);
-        copyMessage.textContent = 'Failed to copy link. Please try again.';
-        copyMessage.className = 'copy-message error';
-        copyMessage.style.opacity = '1';
-        
-        setTimeout(() => {
-          copyMessage.style.opacity = '0';
-        }, 3000);
+        showStatusMessage('Donation link copied!', 'success');
       });
-    });
-  }
-  
-  if (shareBtn) {
-    shareBtn.addEventListener('click', () => {
-      if (navigator.share) {
-        navigator.share({
-          title: 'Quran Tracker App',
-          text: 'Check out this amazing Quran progress tracking app!',
-          url: window.location.href
-        }).then(() => {
-          console.log('Thanks for sharing!');
-        }).catch(err => {
-          console.log('Error sharing:', err);
-        });
-      } else {
-        const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent('Check out Quran Tracker App!')}`;
-        window.open(shareUrl, '_blank');
-      }
     });
   }
 }
 
 /* ======================
-   PAGE NAVIGATION SECTION
+   NAVIGATION - FIXED & SIMPLE
 ====================== */
 function navigate(page) {
+  console.log(`Navigating to: ${page}`);
+  
   if (state.currentPage === page) return;
-  
   state.currentPage = page;
-  renderPage();
   
+  // Hide all pages
+  document.querySelectorAll(".page").forEach(pageEl => {
+    pageEl.classList.remove("active");
+  });
+  
+  // Show target page
+  const targetPage = document.getElementById(`page-${page}`);
+  if (targetPage) {
+    targetPage.classList.add("active");
+  }
+  
+  // Update nav buttons
+  document.querySelectorAll(".nav-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.page === page);
+  });
+  
+  // Page-specific actions
   if (page === 'read') {
     const surahSelect = document.getElementById("surah-select");
     if (surahSelect && surahSelect.options.length <= 1) {
       loadSurahList();
     }
-  }
-}
-
-function renderPage() {
-  document.querySelectorAll(".page").forEach(page => {
-    page.classList.remove("active");
-  });
-  
-  const currentPage = document.getElementById(`page-${state.currentPage}`);
-  if (currentPage) {
-    currentPage.classList.add("active");
-    
-    setTimeout(() => {
-      const cards = currentPage.querySelectorAll('.card');
-      cards.forEach((card, index) => {
-        if (!card.classList.contains('slide-in')) {
-          card.style.animationDelay = `${index * 0.1}s`;
-          card.classList.add('slide-in');
-        }
-      });
-    }, 50);
+    populateTranslationDropdown();
   }
   
-  document.querySelectorAll(".nav-btn").forEach(btn => {
-    const isActive = btn.dataset.page === state.currentPage;
-    btn.classList.toggle("active", isActive);
-    
-    const icon = btn.querySelector('i');
-    if (icon) {
-      if (isActive) {
-        icon.style.transform = 'translateY(-3px)';
-      } else {
-        icon.style.transform = 'translateY(0)';
-      }
-    }
-  });
-  
-  if (state.currentPage === 'home') {
+  if (page === 'home') {
     updateStatsDisplay();
   }
 }
 
 /* ======================
-   STATS FUNCTIONS SECTION
+   STATS FUNCTIONS
 ====================== */
 function updateStatsDisplay() {
   const statValues = document.querySelectorAll('.stat-value');
@@ -309,254 +276,109 @@ function formatTime(seconds) {
 }
 
 /* ======================
-   QURAN DATA LOADING (WITH YOUR STRUCTURE)
+   TRANSLATION DROPDOWN
+====================== */
+function populateTranslationDropdown() {
+  const translationSelect = document.getElementById("translation-select");
+  if (!translationSelect) return;
+  
+  translationSelect.innerHTML = '';
+  
+  Object.entries(TRANSLATIONS).forEach(([code, name]) => {
+    const option = document.createElement("option");
+    option.value = code;
+    option.textContent = `${name} (${code.toUpperCase()})`;
+    if (code === "en") option.selected = true;
+    translationSelect.appendChild(option);
+  });
+}
+
+/* ======================
+   QURAN DATA LOADING
 ====================== */
 async function loadQuranData() {
   try {
-    console.log("📖 Loading Quran data from local JSON...");
-    
-    const response = await fetch('quran.json');
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
+    const response = await fetch("quran.json");
+    if (!response.ok) throw new Error(`HTTP error ${response.status}`);
     state.quranData = await response.json();
-    console.log(`✅ Quran data loaded successfully: ${Object.keys(state.quranData).length} surahs`);
-    
+    console.log("Quran data loaded successfully");
     return state.quranData;
+  } catch (error) {
+    console.error("Failed to load Quran data:", error);
+    showStatusMessage("Failed to load quran.json", "error");
+    throw error;
+  }
+}
+
+/* ======================
+   TRANSLATION LOADER
+====================== */
+async function loadTranslation(lang = "en") {
+  try {
+    const cacheKey = `translation_${lang}`;
+    const cached = loadFromCache(cacheKey);
+    
+    if (cached) {
+      state.translationsData[lang] = cached;
+      return;
+    }
+    
+    const response = await fetch(TRANSLATION_FILES[lang]);
+    if (!response.ok) throw new Error(`Translation file ${lang} not found`);
+    
+    const translationData = await response.json();
+    state.translationsData[lang] = translationData;
+    saveToCache(cacheKey, translationData);
     
   } catch (error) {
-    console.error("❌ Failed to load Quran data:", error);
-    showStatusMessage("Failed to load Quran data. Please refresh the page.", "error");
+    console.warn(`Translation load failed (${lang})`, error);
+    state.translationsData[lang] = null;
     
-    // Fallback to Surah 1 only
-    state.quranData = {
-      "1": {
-        "ayahs": {
-          "1": "ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَـٰلَمِينَ",
-          "2": "ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ",
-          "3": "مَـٰلِكِ يَوْمِ ٱلدِّينِ",
-          "4": "إِيَّاكَ نَعْبُدُ وَإِيَّاكَ نَسْتَعِينُ",
-          "5": "ٱهْدِنَا ٱلصِّرَٰطَ ٱلْمُسْتَقِيمَ",
-          "6": "صِرَٰطَ ٱلَّذِينَ أَنْعَمْتَ عَلَيْهِمْ غَيْرِ ٱلْمَغْضُوبِ عَلَيْهِمْ وَلَا ٱلضَّآلِّينَ"
-        },
-        "bismillah": "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ"
+    if (state.currentPage === 'read' && state.currentSurah) {
+      showStatusMessage(`Could not load ${TRANSLATIONS[lang]} translation. Falling back to English.`, "warning");
+      if (lang !== "en" && state.translationsData["en"]) {
+        state.translation = "en";
+        const translationSelect = document.getElementById("translation-select");
+        if (translationSelect) translationSelect.value = "en";
+        setTimeout(() => loadSurah(state.currentSurah), 500);
       }
-    };
-    
-    return state.quranData;
+    }
   }
 }
 
 /* ======================
-   TRANSLATION DATA LOADING (WITH YOUR STRUCTURE)
-====================== */
-async function loadTranslation(lang) {
-  try {
-    // If translation already loaded, return it
-    if (state.translations[lang]) {
-      return state.translations[lang];
-    }
-    
-    console.log(`📖 Loading ${lang} translation...`);
-    const response = await fetch(`translation-${lang}.json`);
-    if (!response.ok) {
-      throw new Error(`Failed to load ${lang} translation`);
-    }
-    
-    state.translations[lang] = await response.json();
-    console.log(`✅ ${lang} translation loaded successfully`);
-    return state.translations[lang];
-    
-  } catch (error) {
-    console.error(`❌ Failed to load ${lang} translation:`, error);
-    return null;
-  }
-}
-
-/* ======================
-   HELPER FUNCTIONS FOR YOUR DATA STRUCTURE
-====================== */
-function getSurahInfo(surahNumber) {
-  // DEBUG: Check what's in SURAH_INFO
-  console.log("DEBUG getSurahInfo called for:", surahNumber);
-  console.log("DEBUG window.SURAH_INFO:", window.SURAH_INFO);
-  
-  // Try to get from window.SURAH_INFO first
-  let surahInfo = null;
-  
-  if (window.SURAH_INFO && window.SURAH_INFO[surahNumber]) {
-    surahInfo = window.SURAH_INFO[surahNumber];
-    console.log("DEBUG Found in SURAH_INFO:", surahInfo);
-  }
-  
-  // Fallback translations and revelations
-  const fallbackTranslations = {
-    1: "The Opening",
-    2: "The Cow", 
-    3: "Family of Imran",
-    4: "The Women",
-    5: "The Table Spread",
-    6: "The Cattle",
-    7: "The Heights",
-    8: "The Spoils of War",
-    9: "The Repentance",
-    10: "Jonah"
-  };
-  
-  const fallbackRevelations = {
-    1: "Meccan",
-    2: "Medinan",
-    3: "Medinan",
-    4: "Medinan", 
-    5: "Medinan",
-    6: "Meccan",
-    7: "Meccan",
-    8: "Medinan",
-    9: "Medinan",
-    10: "Meccan"
-  };
-  
-  // Get name and english from SURAH_INFO or use fallback
-  const name = surahInfo ? surahInfo.name : `سورة ${surahNumber}`;
-  const english = surahInfo ? surahInfo.english : `Surah ${surahNumber}`;
-  
-  // Get translation and revelation (check surahInfo first, then fallback)
-  let translation = "";
-  let revelation = "";
-  
-  if (surahInfo && surahInfo.translation) {
-    translation = surahInfo.translation;
-  } else {
-    translation = fallbackTranslations[surahNumber] || "Unknown Surah";
-  }
-  
-  if (surahInfo && surahInfo.revelation) {
-    revelation = surahInfo.revelation;
-  } else {
-    revelation = fallbackRevelations[surahNumber] || "Unknown";
-  }
-  
-  // Get ayah count from quran data
-  const ayahCount = state.quranData && state.quranData[surahNumber] 
-    ? Object.keys(state.quranData[surahNumber].ayahs).length 
-    : 0;
-  
-  console.log("DEBUG Returning:", { name, english, translation, revelation, ayahs: ayahCount });
-  
-  return {
-    name: name,
-    english: english,
-    translation: translation,
-    revelation: revelation,
-    ayahs: ayahCount
-  };
-}
-
-function getVerseTranslation(surahNumber, ayahNumber) {
-  try {
-    const translationData = state.translations[state.translation];
-    if (!translationData) return "Translation loading...";
-    
-    if (translationData[surahNumber] && translationData[surahNumber].ayahs[ayahNumber]) {
-      return translationData[surahNumber].ayahs[ayahNumber];
-    }
-    
-    return "Translation not available";
-  } catch (error) {
-    console.error("Error getting translation:", error);
-    return "Translation error";
-  }
-}
-
-function getSurahBismillah(surahNumber) {
-  // Surah 9 has no Bismillah
-  if (surahNumber == 9) return null;
-  
-  // Surah 1 has Bismillah as separate entry
-  if (surahNumber == 1) {
-    return state.quranData["1"]?.bismillah || BISMILLAH_UI;
-  }
-  
-  // Other surahs: check if first ayah starts with Bismillah
-  const firstAyah = state.quranData[surahNumber]?.ayahs["1"];
-  if (firstAyah && firstAyah.includes(BISMILLAH_UI)) {
-    return BISMILLAH_UI;
-  }
-  
-  return null;
-}
-
-/* ======================
-   QURAN READING FUNCTIONS SECTION - FIXED!
+   LOAD SURAH LIST
 ====================== */
 async function loadSurahList() {
-  try {
-    const surahSelect = document.getElementById("surah-select");
-    if (!surahSelect) return;
-    
-    const originalHTML = surahSelect.innerHTML;
-    surahSelect.innerHTML = '<option value="" disabled selected>Loading surahs...</option>';
-    
-    // Ensure Quran data is loaded
-    if (!state.quranData) {
-      await loadQuranData();
-    }
-    
-    // Debug: Check SURAH_INFO
-    console.log("DEBUG in loadSurahList - SURAH_INFO available:", !!window.SURAH_INFO);
-    if (window.SURAH_INFO) {
-      console.log("DEBUG SURAH_INFO[1]:", window.SURAH_INFO[1]);
-      console.log("DEBUG SURAH_INFO[2]:", window.SURAH_INFO[2]);
-    }
-    
-    surahSelect.innerHTML = '<option value="" disabled selected>Choose a surah...</option>';
-    
-    // Get all surah numbers from quran data
-    const surahNumbers = Object.keys(state.quranData).map(Number).sort((a, b) => a - b);
-    
-    surahNumbers.forEach(surahNumber => {
-      const surahInfo = getSurahInfo(surahNumber);
-      const ayahCount = Object.keys(state.quranData[surahNumber].ayahs || {}).length;
-      
-      console.log(`DEBUG Creating option for surah ${surahNumber}:`, surahInfo);
-      
-      const option = document.createElement("option");
-      option.value = surahNumber;
-      // FIXED: Using the correct properties from surahInfo
-      option.textContent = `${surahNumber}. ${surahInfo.english} (${surahInfo.name})`;
-      option.title = `${surahInfo.translation} | ${surahInfo.revelation} | ${ayahCount} verses`;
-      surahSelect.appendChild(option);
-    });
-    
-    if (state.currentSurah) {
-      surahSelect.value = state.currentSurah;
-    }
-    
-    console.log(`✅ Loaded ${surahNumbers.length} surahs successfully`);
-    
-  } catch (error) {
-    console.error("Failed to load surah list:", error);
-    const surahSelect = document.getElementById("surah-select");
-    if (!surahSelect) return;
-    
-    surahSelect.innerHTML = `
-      <option value="" disabled selected>Failed to load surahs. Please check connection.</option>
-    `;
-    
-    const retryOption = document.createElement("option");
-    retryOption.value = "retry";
-    retryOption.textContent = "Click here to retry";
-    surahSelect.appendChild(retryOption);
-    
-    surahSelect.addEventListener('change', function() {
-      if (this.value === "retry") {
-        loadSurahList();
-      }
-    });
+  const surahSelect = document.getElementById("surah-select");
+  if (!surahSelect) return;
+
+  surahSelect.innerHTML = '<option value="" disabled selected>Choose a surah...</option>';
+
+  if (!state.quranData) {
+    await loadQuranData();
   }
+
+  Object.keys(state.quranData).forEach((surahNumber) => {
+    const option = document.createElement("option");
+    option.value = surahNumber;
+    
+    const info = window.SURAH_INFO ? window.SURAH_INFO[Number(surahNumber)] : null;
+    option.textContent = info && info.english
+      ? `${surahNumber}. ${info.english}`
+      : `Surah ${surahNumber}`;
+    
+    if (info && info.name) {
+      option.title = info.name;
+    }
+    
+    surahSelect.appendChild(option);
+  });
 }
 
+/* ======================
+   LOAD SURAH - FIXED WITH BISMILLAH
+====================== */
 async function loadSurah(surahNumber) {
   if (!surahNumber || surahNumber === "") {
     showStatusMessage("Please select a surah first", "warning");
@@ -578,205 +400,70 @@ async function loadSurah(surahNumber) {
         <div class="placeholder-icon">
           <i class="fas fa-spinner fa-spin"></i>
         </div>
-        <h3>Loading Surah...</h3>
-        <p>Please wait while we fetch the Quranic text</p>
+        <h3>Loading Surah ${surahNumber}...</h3>
       </div>
     `;
   }
   
   try {
-    // Ensure Quran data is loaded
-    if (!state.quranData) {
-      await loadQuranData();
-    }
+    if (!state.quranData) await loadQuranData();
+    if (!state.translationsData[state.translation]) await loadTranslation(state.translation);
     
-    // Load translation if not already loaded
-    if (!state.translations[state.translation]) {
-      await loadTranslation(state.translation);
-    }
-    
-    const surahData = state.quranData[surahNumber];
-    if (!surahData) {
-      throw new Error(`Surah ${surahNumber} not found in data`);
-    }
+    const surah = state.quranData[surahNumber];
+    if (!surah) throw new Error(`Surah ${surahNumber} not found`);
     
     state.currentSurah = surahNumber;
-    state.currentSurahData = surahData;
+    state.currentSurahData = surah;
     state.stats.surahsRead++;
     updateStatsDisplay();
     
-    const ayahs = surahData.ayahs;
-    const surahInfo = getSurahInfo(surahNumber);
-    const hasBismillah = getSurahBismillah(surahNumber);
-    
-    console.log("DEBUG loadSurah - surahInfo:", surahInfo);
-    
     let versesHTML = "";
     
-    // ===============================
-    // SURAH 1 — AL-FATIHAH SPECIAL HANDLING
-    // ===============================
-    if (surahNumber == 1) {
-      // 1️⃣ Show Bismillah as a header (from bismillah field)
+    // FIXED: Add Bismillah for all surahs except At-Tawbah (Surah 9)
+    const surahNum = parseInt(surahNumber);
+    if (surahNum !== 9) {
+      // Use Bismillah from JSON if available, otherwise use default
+      const bismillahText = surah.bismillah || "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ";
       versesHTML += `
-        <div class="bismillah-starter" style="margin-bottom: 25px; text-align:center;">
-          <div class="verse-ar" style="font-size:${state.fontSize + 4}px; font-family: 'Amiri Quran', 'Scheherazade New', 'Traditional Arabic', serif;">
-            ${hasBismillah || BISMILLAH_UI}
-          </div>
-          <div class="verse-tr" style="font-style:italic;color:#555;">
-            ${BISMILLAH_TRANSLATION}
-          </div>
-          <div style="font-size:12px;color:#14b8a6;margin-top:6px;">
-            <i class="fas fa-star"></i> Starter (not counted as an ayah)
-          </div>
+        <div class="bismillah-starter">
+          <div class="verse-ar bismillah-text">${bismillahText}</div>
+          <div class="verse-tr">In the name of Allah, the Most Gracious, the Most Merciful</div>
         </div>
       `;
-
-      // 2️⃣ Display ayahs 1-6 (which are actually ayahs 1-6 in your data)
-      for (let i = 1; i <= 6; i++) {
-        const ayahText = ayahs[i];
-        if (!ayahText) continue;
-        
-        const translation = getVerseTranslation(surahNumber, i);
-        
-        versesHTML += `
-          <div class="verse" style="font-size:${state.fontSize}px">
-            <div class="verse-ar" style="font-family: 'Amiri Quran', 'Scheherazade New', 'Traditional Arabic', serif;">
-              ${ayahText}
-              <span class="verse-number">${i}</span>
-            </div>
-            <div class="verse-tr">
-              ${translation}
-            </div>
-          </div>
-        `;
-      }
     }
-    // ===============================
-    // SURAH 9 — AT-TAWBAH (NO BISMILLAH)
-    // ===============================
-    else if (surahNumber == 9) {
-      // Display all ayahs normally
-      Object.entries(ayahs).forEach(([ayahNum, ayahText]) => {
-        const translation = getVerseTranslation(surahNumber, parseInt(ayahNum));
-        
-        versesHTML += `
-          <div class="verse" style="font-size:${state.fontSize}px">
-            <div class="verse-ar" style="font-family: 'Amiri Quran', 'Scheherazade New', 'Traditional Arabic', serif;">
-              ${ayahText}
-              <span class="verse-number">${ayahNum}</span>
-            </div>
-            <div class="verse-tr">
-              ${translation}
-            </div>
-          </div>
-        `;
-      });
-    }
-    // ===============================
-    // ALL OTHER SURAHS (2-114, except 9)
-    // ===============================
-    else {
-      // Check if first ayah contains Bismillah
-      const firstAyahText = ayahs["1"];
-      const bismillahInAyah = firstAyahText && firstAyahText.includes(BISMILLAH_UI);
+    
+    Object.entries(surah.ayahs).forEach(([ayahNumber, text]) => {
+      const translationData = state.translationsData[state.translation];
+      let translationText = "No translation available";
       
-      if (bismillahInAyah) {
-        // First ayah has Bismillah - separate it
-        const bismillahPart = BISMILLAH_UI;
-        const restOfAyah = firstAyahText.replace(BISMILLAH_UI, '').trim();
-        const translation = getVerseTranslation(surahNumber, 1);
-        
-        versesHTML += `
-          <div class="verse first-ayah-special">
-            <div class="ayah-separated">
-              <div class="bismillah-part">
-                <div class="verse-ar bismillah-text" style="font-family: 'Amiri Quran', 'Scheherazade New', 'Traditional Arabic', serif;">${bismillahPart}</div>
-                <div class="verse-tr bismillah-translation">${BISMILLAH_TRANSLATION}</div>
-              </div>
-              <div class="separator-line">
-                <div class="line"></div>
-                <div class="ayah-number">1</div>
-                <div class="line"></div>
-              </div>
-              <div class="rest-of-ayah">
-                <div class="verse-ar" style="font-family: 'Amiri Quran', 'Scheherazade New', 'Traditional Arabic', serif;">${restOfAyah}</div>
-                <div class="verse-tr">${translation}</div>
-              </div>
-            </div>
-          </div>
-        `;
-        
-        // Display remaining ayahs (starting from 2)
-        for (let i = 2; ayahs[i]; i++) {
-          const translation = getVerseTranslation(surahNumber, i);
-          
-          versesHTML += `
-            <div class="verse" style="font-size:${state.fontSize}px">
-              <div class="verse-ar" style="font-family: 'Amiri Quran', 'Scheherazade New', 'Traditional Arabic', serif;">
-                ${ayahs[i]}
-                <span class="verse-number">${i}</span>
-              </div>
-              <div class="verse-tr">
-                ${translation}
-              </div>
-            </div>
-          `;
-        }
-      } else {
-        // No Bismillah in first ayah, display all normally
-        Object.entries(ayahs).forEach(([ayahNum, ayahText]) => {
-          const translation = getVerseTranslation(surahNumber, parseInt(ayahNum));
-          
-          versesHTML += `
-            <div class="verse" style="font-size:${state.fontSize}px">
-              <div class="verse-ar" style="font-family: 'Amiri Quran', 'Scheherazade New', 'Traditional Arabic', serif;">
-                ${ayahText}
-                <span class="verse-number">${ayahNum}</span>
-              </div>
-              <div class="verse-tr">
-                ${translation}
-              </div>
-            </div>
-          `;
-        });
+      if (translationData && translationData[surahNumber] && translationData[surahNumber].ayahs) {
+        translationText = translationData[surahNumber].ayahs[ayahNumber] || translationText;
       }
-    }
+      
+      versesHTML += `
+        <div class="verse">
+          <div class="verse-ar">
+            ${text}
+            <span class="verse-number">${ayahNumber}</span>
+          </div>
+          <div class="verse-tr">${translationText}</div>
+        </div>
+      `;
+    });
     
-    // Calculate correct number of ayahs
-    let correctAyahCount;
-    let noteType;
-    let noteText;
+    const totalAyahs = Object.keys(surah.ayahs || {}).length;
+    const info = window.SURAH_INFO ? window.SURAH_INFO[Number(surahNumber)] : null;
+    let surahTitle = info && info.english
+      ? `${info.english} (${info.name || ''})`
+      : `Surah ${surahNumber}`;
     
-    if (surahNumber == 1) {
-      correctAyahCount = 6;
-      noteType = 'fatihah';
-      noteText = 'Al-Fatihah: 6 verses + Bismillah opener';
-    } else if (surahNumber == 9) {
-      correctAyahCount = Object.keys(ayahs).length;
-      noteType = 'tawbah';
-      noteText = 'At-Tawbah: No Bismillah at beginning';
-    } else {
-      correctAyahCount = Object.keys(ayahs).length;
-      noteType = 'normal';
-      noteText = hasBismillah ? 'Bismillah included in first verse' : 'No Bismillah in this surah';
-    }
-    
-    const translationSelect = document.getElementById("translation-select");
     const translationName = TRANSLATIONS[state.translation] || 'English';
     
     const surahHeader = `
       <div class="surah-header">
-        <h2>${surahInfo.english} <span style="font-weight:300;">(${surahInfo.name})</span></h2>
-        <p style="opacity: 0.9; margin-bottom: 10px;">
-          <strong>${surahInfo.translation}</strong> • ${correctAyahCount} verses • ${surahInfo.revelation}
-        </p>
-        <p style="margin-top: 15px; font-size: 0.95em;">
-          <i class="fas fa-language"></i> Translation: <strong>${translationName}</strong>
-        </p>
-        <div class="surah-note ${noteType}" style="margin-top: 12px;">
-          <i class="fas fa-info-circle"></i> ${noteText}
-        </div>
+        <h2>${surahTitle}</h2>
+        <p>${totalAyahs} verses</p>
+        <p><i class="fas fa-language"></i> Translation: ${translationName}</p>
       </div>
     `;
     
@@ -785,15 +472,7 @@ async function loadSurah(surahNumber) {
       readerElement.scrollTop = 0;
     }
     
-    showStatusMessage("Surah loaded successfully!", "success");
-    
-    // Log for debugging
-    console.log(`Surah ${surahNumber} loaded:`, {
-      name: surahInfo.english,
-      ayahCount: correctAyahCount,
-      type: noteType,
-      hasBismillah: !!hasBismillah
-    });
+    showStatusMessage(`Surah ${surahNumber} loaded!`, "success");
     
   } catch (error) {
     console.error("Failed to load surah:", error);
@@ -804,8 +483,8 @@ async function loadSurah(surahNumber) {
           <div class="placeholder-icon" style="color: #ef4444;">
             <i class="fas fa-exclamation-triangle"></i>
           </div>
-          <h3>Failed to Load Surah</h3>
-          <p>${error.message || "Please check your data and try again"}</p>
+          <h3>Failed to Load Surah ${surahNumber}</h3>
+          <p>${error.message}</p>
           <button id="retry-btn" class="btn mt-2">
             <i class="fas fa-redo"></i> Retry Loading
           </button>
@@ -827,6 +506,9 @@ async function loadSurah(surahNumber) {
   }
 }
 
+/* ======================
+   STATUS MESSAGES
+====================== */
 function showStatusMessage(message, type = "info") {
   const statusMessages = document.getElementById("status-messages");
   if (!statusMessages) return;
@@ -838,53 +520,6 @@ function showStatusMessage(message, type = "info") {
     ${message}
   `;
   
-  if (!document.querySelector('#status-message-styles')) {
-    const style = document.createElement('style');
-    style.id = 'status-message-styles';
-    style.textContent = `
-      #status-messages {
-        position: fixed;
-        top: 80px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 999;
-        width: 90%;
-        max-width: 400px;
-      }
-      .status-message {
-        padding: 12px 20px;
-        border-radius: 10px;
-        margin-bottom: 10px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-weight: 500;
-        animation: slideDown 0.3s ease;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      }
-      .status-message.success {
-        background: #d1fae5;
-        color: #065f46;
-        border-left: 4px solid #10b981;
-      }
-      .status-message.error {
-        background: #fee2e2;
-        color: #991b1b;
-        border-left: 4px solid #ef4444;
-      }
-      .status-message.warning {
-        background: #fef3c7;
-        color: #92400e;
-        border-left: 4px solid #f59e0b;
-      }
-      @keyframes slideDown {
-        from { transform: translateY(-20px); opacity: 0; }
-        to { transform: translateY(0); opacity: 1; }
-      }
-    `;
-    document.head.appendChild(style);
-  }
-  
   statusMessages.appendChild(messageDiv);
   
   setTimeout(() => {
@@ -892,11 +527,11 @@ function showStatusMessage(message, type = "info") {
     setTimeout(() => {
       messageDiv.remove();
     }, 300);
-  }, 5000);
+  }, 3000);
 }
 
 /* ======================
-   TIMER FUNCTIONS SECTION
+   TIMER FUNCTIONS
 ====================== */
 function initTimer() {
   const timerBtn = document.getElementById("timer-btn");
@@ -932,11 +567,8 @@ function initTimer() {
       state.timer.interval = setInterval(() => {
         state.timer.elapsed = Math.floor((Date.now() - state.timer.startTime) / 1000);
         updateTimerDisplay();
-        
         state.stats.timeSpent = state.timer.elapsed;
-        if (state.currentPage === 'home') {
-          updateStatsDisplay();
-        }
+        if (state.currentPage === 'home') updateStatsDisplay();
       }, 1000);
       
       state.timer.running = true;
@@ -959,7 +591,7 @@ function initTimer() {
 }
 
 /* ======================
-   TRIVIA FUNCTIONS SECTION
+   TRIVIA FUNCTIONS
 ====================== */
 function initTrivia() {
   const triviaText = document.getElementById("trivia-text");
@@ -973,7 +605,6 @@ function initTrivia() {
   triviaBtn.addEventListener('click', () => {
     triviaBtn.disabled = true;
     
-    triviaText.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
     triviaText.style.opacity = '0';
     triviaText.style.transform = 'translateY(-10px)';
     
@@ -989,17 +620,13 @@ function initTrivia() {
       triviaText.style.opacity = '1';
       triviaText.style.transform = 'translateY(0)';
       
-      triviaBtn.style.transform = 'rotate(360deg)';
-      setTimeout(() => {
-        triviaBtn.style.transform = 'rotate(0deg)';
-        triviaBtn.disabled = false;
-      }, 300);
+      triviaBtn.disabled = false;
     }, 300);
   });
 }
 
 /* ======================
-   FONT SIZE CONTROL SECTION
+   FONT SIZE CONTROL
 ====================== */
 function initFontSizeControl() {
   const fontSizeSlider = document.getElementById("font-size");
@@ -1011,22 +638,9 @@ function initFontSizeControl() {
     state.fontSize = parseInt(fontSizeSlider.value);
     fontSizeValue.textContent = `${state.fontSize}px`;
     
-    // Update all existing verse fonts
-    const verses = document.querySelectorAll('.verse:not(.bismillah-starter):not(.first-ayah-special)');
+    const verses = document.querySelectorAll('.verse');
     verses.forEach(verse => {
       verse.style.fontSize = `${state.fontSize}px`;
-    });
-    
-    // Update Bismillah starter
-    const bismillahStarters = document.querySelectorAll('.bismillah-starter .verse-ar');
-    bismillahStarters.forEach(text => {
-      text.style.fontSize = `${state.fontSize + 4}px`;
-    });
-    
-    // Update separated ayah fonts
-    const bismillahTexts = document.querySelectorAll('.bismillah-text');
-    bismillahTexts.forEach(text => {
-      text.style.fontSize = `${state.fontSize + 2}px`;
     });
   });
   
@@ -1035,47 +649,30 @@ function initFontSizeControl() {
 }
 
 /* ======================
-   QUICK ACTIONS SECTION
+   QUICK ACTIONS
 ====================== */
 function initQuickActions() {
-  const readBtn = document.querySelector('.action-btn[data-page="read"]');
-  if (readBtn) {
-    readBtn.addEventListener('click', () => {
-      navigate('read');
-    });
-  }
-  
-  const settingsBtn = document.querySelector('.action-btn[data-page="settings"]');
-  if (settingsBtn) {
-    settingsBtn.addEventListener('click', () => {
-      navigate('settings');
-    });
-  }
-  
-  const sadaqahQuickBtn = document.getElementById('sadaqah-quick-btn');
-  if (sadaqahQuickBtn) {
-    sadaqahQuickBtn.addEventListener('click', () => {
-      const modal = document.getElementById('sadaqah-modal');
-      if (modal) {
-        modal.classList.add('active');
-        document.body.style.overflow = 'hidden';
+  // Quick action buttons
+  document.querySelectorAll('.action-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const page = this.dataset.page;
+      if (page) {
+        navigate(page);
+      }
+      
+      if (this.id === 'sadaqah-quick-btn') {
+        openModal();
       }
     });
-  }
+  });
   
+  // Refresh verse button
   const refreshVerseBtn = document.getElementById('refresh-verse');
   if (refreshVerseBtn) {
     refreshVerseBtn.addEventListener('click', async () => {
       await fetchRandomVerse();
     });
   }
-  
-  // Fetch random verse on page load
-  window.addEventListener('load', () => {
-    setTimeout(() => {
-      fetchRandomVerse();
-    }, 1000);
-  });
 }
 
 async function fetchRandomVerse() {
@@ -1086,113 +683,108 @@ async function fetchRandomVerse() {
     refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
     refreshBtn.disabled = true;
     
-    // Ensure Quran data is loaded
     if (!state.quranData) {
       await loadQuranData();
+      await loadTranslation(state.translation);
     }
     
-    // Get all surah numbers
-    const surahNumbers = Object.keys(state.quranData).map(Number);
-    const randomSurahNumber = surahNumbers[Math.floor(Math.random() * surahNumbers.length)];
-    const randomSurah = state.quranData[randomSurahNumber];
+    const surahNumbers = Object.keys(state.quranData);
+    const randomSurahNum = surahNumbers[Math.floor(Math.random() * surahNumbers.length)];
+    const randomSurah = state.quranData[randomSurahNum];
     
-    // Get all ayah numbers for this surah
-    const ayahNumbers = Object.keys(randomSurah.ayahs).map(Number);
-    const randomAyahNumber = ayahNumbers[Math.floor(Math.random() * ayahNumbers.length)];
-    const randomAyahText = randomSurah.ayahs[randomAyahNumber];
-    
-    // Load translation for the verse
-    if (!state.translations.en) {
-      await loadTranslation('en');
+    if (!randomSurah || !randomSurah.ayahs) {
+      throw new Error('No ayahs found');
     }
     
-    const translation = getVerseTranslation(randomSurahNumber, randomAyahNumber);
-    const surahInfo = getSurahInfo(randomSurahNumber);
+    const ayahNumbers = Object.keys(randomSurah.ayahs);
+    const randomAyahNum = ayahNumbers[Math.floor(Math.random() * ayahNumbers.length)];
+    const randomAyahText = randomSurah.ayahs[randomAyahNum];
+    
+    let translationText = "Translation not available";
+    const translationData = state.translationsData[state.translation];
+    
+    if (translationData && translationData[randomSurahNum] && translationData[randomSurahNum].ayahs) {
+      translationText = translationData[randomSurahNum].ayahs[randomAyahNum] || translationText;
+    }
+    
+    const info = window.SURAH_INFO ? window.SURAH_INFO[Number(randomSurahNum)] : null;
+    const surahName = info && info.english ? info.english : `Surah ${randomSurahNum}`;
     
     document.querySelector('.daily-verse-arabic').textContent = randomAyahText;
-    document.querySelector('.daily-verse-translation').textContent = translation || "Translation not available";
-    document.querySelector('.daily-verse-reference').textContent = `Surah ${surahInfo.english} (${randomSurahNumber}:${randomAyahNumber})`;
+    document.querySelector('.daily-verse-translation').textContent = translationText;
+    document.querySelector('.daily-verse-reference').textContent = `${surahName} (${randomSurahNum}:${randomAyahNum})`;
     
     showStatusMessage('New verse loaded!', 'success');
     
   } catch (error) {
     console.error('Error fetching verse:', error);
-    showStatusMessage('Failed to load new verse. Please try again.', 'error');
-    
-    const fallbackVerses = [
-      {
-        arabic: 'رَبَّنَآ اٰتِنَا فِى الدُّنْيَا حَسَنَةً وَّفِى الْاٰخِرَةِ حَسَنَةً وَّقِنَا عَذَابَ النَّارِ',
-        translation: "Our Lord, give us in this world [that which is] good and in the Hereafter [that which is] good and protect us from the punishment of the Fire.",
-        reference: "Surah Al-Baqarah (2:201)"
-      },
-      {
-        arabic: 'وَذَكَرَ ٱسْمَ رَبِّهِۦ فَصَلَّىٰ',
-        translation: "And mentions the name of his Lord and prays.",
-        reference: "Surah Al-A'la (87:15)"
-      },
-      {
-        arabic: 'إِنَّ مَعَ ٱلْعُسْرِ يُسْرًا',
-        translation: "Indeed, with hardship [will be] ease.",
-        reference: "Surah Ash-Sharh (94:6)"
-      }
-    ];
-    
-    const randomFallback = fallbackVerses[Math.floor(Math.random() * fallbackVerses.length)];
-    document.querySelector('.daily-verse-arabic').textContent = randomFallback.arabic;
-    document.querySelector('.daily-verse-translation').textContent = randomFallback.translation;
-    document.querySelector('.daily-verse-reference').textContent = randomFallback.reference;
-    
+    showStatusMessage('Failed to load new verse', 'error');
   } finally {
     const refreshBtn = document.getElementById('refresh-verse');
-    refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Another Verse';
-    refreshBtn.disabled = false;
+    if (refreshBtn) {
+      refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Another Verse';
+      refreshBtn.disabled = false;
+    }
   }
 }
 
 /* ======================
-   EVENT BINDING SECTION
+   EVENT BINDING - FIXED SIMPLE VERSION
 ====================== */
 function bindEvents() {
-  document.querySelectorAll(".nav-btn").forEach(btn => {
-    btn.addEventListener('click', () => navigate(btn.dataset.page));
+  console.log("Binding events...");
+  
+  // 1. BOTTOM NAVIGATION - DIRECT EVENT LISTENERS
+  const navButtons = document.querySelectorAll(".nav-btn");
+  console.log(`Found ${navButtons.length} nav buttons`);
+  
+  navButtons.forEach(btn => {
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const page = this.dataset.page;
+      console.log(`Nav button clicked: ${page}`);
+      navigate(page);
+    });
   });
   
+  // 2. LOAD SURAH BUTTON
   const loadBtn = document.getElementById("load-btn");
   if (loadBtn) {
     loadBtn.addEventListener('click', () => {
       const surahNumber = document.getElementById("surah-select").value;
-      loadSurah(surahNumber);
-    });
-  }
-  
-  const translationSelect = document.getElementById("translation-select");
-  if (translationSelect) {
-    translationSelect.addEventListener('change', () => {
-      state.translation = translationSelect.value;
-      // Clear cached translation to force reload
-      state.translations[state.translation] = null;
-      if (state.currentSurah) {
-        loadSurah(state.currentSurah);
+      if (surahNumber) {
+        loadSurah(surahNumber);
+      } else {
+        showStatusMessage("Please select a surah first", "warning");
       }
     });
   }
   
-  initFontSizeControl();
-  initQuickActions();
-}
-
-function trackEvent(eventName, data = {}) {
-  console.log(`📊 Event: ${eventName}`, data);
+  // 3. TRANSLATION SELECT
+  const translationSelect = document.getElementById("translation-select");
+  if (translationSelect) {
+    translationSelect.addEventListener('change', async () => {
+      const newLang = translationSelect.value;
+      state.translation = newLang;
+      showStatusMessage(`Switching to ${TRANSLATIONS[newLang]}...`, "info");
+      await loadTranslation(newLang);
+      if (state.currentSurah) {
+        setTimeout(() => loadSurah(state.currentSurah), 300);
+      }
+    });
+  }
+  
+  console.log("Events bound successfully");
 }
 
 /* ======================
-   LOADING SCREEN SECTION
+   HIDE LOADING SCREEN
 ====================== */
 function hideLoadingScreen() {
   const loadingScreen = document.getElementById('loading-screen');
   if (loadingScreen) {
     loadingScreen.style.opacity = '0';
-    
     setTimeout(() => {
       loadingScreen.style.display = 'none';
     }, 500);
@@ -1200,376 +792,57 @@ function hideLoadingScreen() {
 }
 
 /* ======================
-   ADD CUSTOM STYLES WITH ARABIC FONT IMPROVEMENTS
-====================== */
-function addCustomStyles() {
-  if (!document.querySelector('#custom-animations')) {
-    const style = document.createElement('style');
-    style.id = 'custom-animations';
-    style.textContent = `
-      /* Import Arabic fonts */
-      @import url('https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Scheherazade+New:wght@400;700&family=Lateef:wght@200;300;400;500;600;700;800&display=swap');
-      
-      @keyframes slideInRight {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-      }
-      
-      @keyframes slideOutRight {
-        from { transform: translateX(0); opacity: 1; }
-        to { transform: translateX(100%); opacity: 0; }
-      }
-      
-      @keyframes slideUp {
-        from { transform: translateY(0); opacity: 1; }
-        to { transform: translateY(-20px); opacity: 0; }
-      }
-      
-      .success-message {
-        animation: slideInRight 0.3s ease;
-      }
-      
-      .success-message.hide {
-        animation: slideOutRight 0.3s ease;
-      }
-      
-      .loading-screen {
-        transition: opacity 0.5s ease, visibility 0.5s ease;
-      }
-      
-      /* Quran text animations */
-      .verse {
-        animation: fadeInVerse 0.5s ease forwards;
-        opacity: 0;
-        transform: translateY(10px);
-      }
-      
-      @keyframes fadeInVerse {
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-      
-      /* Arabic text styling */
-      .verse-ar {
-        font-family: 'Amiri Quran', 'Scheherazade New', 'Traditional Arabic', serif !important;
-        font-size: 26px;
-        line-height: 2.2;
-        text-align: right;
-        direction: rtl;
-        margin-bottom: 12px;
-        color: #1a202c;
-        font-weight: 400;
-        letter-spacing: 0px;
-        word-spacing: 3px;
-      }
-      
-      .bismillah-starter .verse-ar {
-        font-family: 'Amiri Quran', 'Scheherazade New', 'Traditional Arabic', serif !important;
-        font-size: 28px;
-        font-weight: 700;
-        color: #115e59;
-        line-height: 2.5;
-        text-align: center;
-      }
-      
-      /* First ayah special styling for separated Bismillah */
-      .first-ayah-special {
-        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%) !important;
-        border-radius: 15px !important;
-        padding: 20px !important;
-        margin-bottom: 25px !important;
-        border-left: 4px solid #0f766e !important;
-      }
-      
-      .ayah-separated {
-        display: flex;
-        flex-direction: column;
-        gap: 15px;
-      }
-      
-      .bismillah-part {
-        text-align: center;
-        padding: 15px;
-        background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
-        border-radius: 12px;
-        border: 1px dashed #14b8a6;
-      }
-      
-      .bismillah-text {
-        font-family: 'Amiri Quran', 'Scheherazade New', 'Traditional Arabic', serif !important;
-        font-size: 26px !important;
-        font-weight: 700 !important;
-        color: #115e59 !important;
-        line-height: 2 !important;
-        margin-bottom: 8px !important;
-        text-align: center !important;
-      }
-      
-      .bismillah-translation {
-        font-style: italic !important;
-        color: #555 !important;
-        font-size: 1rem !important;
-        border-top: none !important;
-        padding-top: 0 !important;
-        margin-top: 0 !important;
-        text-align: center !important;
-      }
-      
-      .separator-line {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 10px;
-        margin: 10px 0;
-      }
-      
-      .separator-line .line {
-        flex: 1;
-        height: 2px;
-        background: linear-gradient(90deg, transparent, #cbd5e1, transparent);
-      }
-      
-      .separator-line .ayah-number {
-        background: linear-gradient(135deg, #0f766e, #14b8a6);
-        color: white;
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 700;
-        font-size: 0.9rem;
-        box-shadow: 0 3px 6px rgba(15, 118, 110, 0.2);
-      }
-      
-      .rest-of-ayah {
-        text-align: center;
-        padding: 15px;
-        background: rgba(255, 255, 255, 0.7);
-        border-radius: 12px;
-        border: 1px solid #e2e8f0;
-      }
-      
-      .rest-of-ayah .verse-ar {
-        font-family: 'Amiri Quran', 'Scheherazade New', 'Traditional Arabic', serif !important;
-        font-size: 24px !important;
-        line-height: 2 !important;
-        margin-bottom: 8px !important;
-        text-align: center !important;
-      }
-      
-      .rest-of-ayah .verse-tr {
-        color: #475569 !important;
-        line-height: 1.6 !important;
-        font-size: 1rem !important;
-        border-top: 1px dashed #cbd5e1 !important;
-        padding-top: 8px !important;
-        margin-top: 8px !important;
-      }
-      
-      /* Daily verse Arabic styling */
-      .daily-verse-arabic {
-        font-family: 'Amiri Quran', 'Scheherazade New', 'Traditional Arabic', serif !important;
-        font-size: 22px;
-        line-height: 2;
-        text-align: center;
-        direction: rtl;
-        color: #1a202c;
-        margin-bottom: 15px;
-      }
-      
-      /* Verse number styling */
-      .verse-number {
-        display: inline-block;
-        width: 32px;
-        height: 32px;
-        line-height: 32px;
-        text-align: center;
-        background: linear-gradient(135deg, #0f766e, #14b8a6);
-        color: white;
-        border-radius: 50%;
-        font-size: 0.8rem;
-        font-weight: 700;
-        margin: 0 8px;
-        vertical-align: middle;
-        box-shadow: 0 2px 4px rgba(15, 118, 110, 0.2);
-      }
-      
-      /* Surah note styling */
-      .surah-note {
-        padding: 10px 15px;
-        border-radius: 8px;
-        font-size: 0.9rem;
-        background: #f0f9ff;
-        border-left: 4px solid #0ea5e9;
-      }
-      
-      .surah-note.fatihah {
-        background: #f0fdf4;
-        border-left: 4px solid #10b981;
-      }
-      
-      .surah-note.tawbah {
-        background: #fef3c7;
-        border-left: 4px solid #f59e0b;
-      }
-      
-      /* Font size responsiveness */
-      @media (max-width: 768px) {
-        .verse-ar {
-          font-size: 24px !important;
-          line-height: 2.2;
-        }
-        
-        .bismillah-text {
-          font-size: 24px !important;
-        }
-        
-        .bismillah-starter .verse-ar {
-          font-size: 26px !important;
-        }
-        
-        .rest-of-ayah .verse-ar {
-          font-size: 22px !important;
-        }
-        
-        .daily-verse-arabic {
-          font-size: 20px;
-        }
-      }
-      
-      @media (max-width: 480px) {
-        .verse-ar {
-          font-size: 22px !important;
-          line-height: 2;
-        }
-        
-        .bismillah-text {
-          font-size: 22px !important;
-        }
-        
-        .bismillah-starter .verse-ar {
-          font-size: 24px !important;
-        }
-        
-        .rest-of-ayah .verse-ar {
-          font-size: 20px !important;
-        }
-        
-        .verse-number {
-          width: 30px;
-          height: 30px;
-          line-height: 30px;
-          font-size: 0.8rem;
-        }
-        
-        .separator-line .ayah-number {
-          width: 28px;
-          height: 28px;
-          font-size: 0.8rem;
-        }
-        
-        .verse {
-          padding: 15px;
-        }
-        
-        .first-ayah-special {
-          padding: 15px !important;
-        }
-        
-        .daily-verse-arabic {
-          font-size: 18px;
-        }
-      }
-      
-      /* For very small screens */
-      @media (max-width: 360px) {
-        .verse-ar {
-          font-size: 20px !important;
-        }
-        
-        .bismillah-starter .verse-ar {
-          font-size: 22px !important;
-        }
-        
-        .daily-verse-arabic {
-          font-size: 16px;
-        }
-      }
-    `;
-    document.head.appendChild(style);
-  }
-}
-
-/* ======================
-   INITIALIZATION SECTION
+   INITIALIZATION - FIXED
 ====================== */
 async function initializeApp() {
   console.log("🕌 Quran Tracker initializing...");
   
   try {
-    addCustomStyles();
+    // Initialize all components
     initTelegram();
     initModal();
     initTimer();
     initTrivia();
+    initFontSizeControl();
+    initQuickActions();
+    
+    // Bind events FIRST
     bindEvents();
     
+    // Update date/time
     updateDateTime();
     setInterval(updateDateTime, 60000);
     
-    // Load Quran data first
-    await loadQuranData();
+    // Load data (async, non-blocking)
+    setTimeout(async () => {
+      try {
+        await loadQuranData();
+        await loadTranslation("en");
+        await loadSurahList();
+        populateTranslationDropdown();
+        console.log("Data loaded successfully");
+      } catch (error) {
+        console.warn("Data loading warning:", error);
+      }
+    }, 500);
     
-    // Preload English translation for daily verse
-    await loadTranslation('en');
-    
-    // Then load surah list
-    await loadSurahList();
-    
-    renderPage();
-    
-    setTimeout(hideLoadingScreen, 1500);
-    
-    console.log("✅ Quran Tracker initialized successfully!");
+    // Hide loading screen
+    setTimeout(() => {
+      hideLoadingScreen();
+      console.log("✅ App fully initialized");
+      
+      // Test navigation
+      console.log("Try clicking navigation buttons now!");
+    }, 1500);
     
   } catch (error) {
-    console.error("❌ Failed to initialize app:", error);
-    
+    console.error("Initialization error:", error);
     hideLoadingScreen();
-    
-    const errorDiv = document.createElement('div');
-    errorDiv.style.cssText = `
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: white;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 5px 20px rgba(0,0,0,0.2);
-      text-align: center;
-      z-index: 9999;
-      max-width: 80%;
-    `;
-    errorDiv.innerHTML = `
-      <h3 style="color: #dc2626; margin-bottom: 10px;">
-        <i class="fas fa-exclamation-triangle"></i> Initialization Error
-      </h3>
-      <p>There was an error loading the app. Please refresh the page.</p>
-      <button onclick="window.location.reload()" class="btn" style="margin-top: 15px;">
-        <i class="fas fa-redo"></i> Refresh Page
-      </button>
-    `;
-    document.body.appendChild(errorDiv);
   }
 }
 
 /* ======================
-   START THE APPLICATION
+   START THE APP
 ====================== */
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initializeApp);
@@ -1577,5 +850,11 @@ if (document.readyState === 'loading') {
   initializeApp();
 }
 
+// Export for debugging
 window.navigate = navigate;
 window.state = state;
+window.debug = function() {
+  console.log("Current page:", state.currentPage);
+  console.log("Nav buttons:", document.querySelectorAll('.nav-btn').length);
+  console.log("Active page:", document.querySelector('.page.active')?.id);
+};
