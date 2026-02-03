@@ -1,0 +1,473 @@
+<!-- ======================
+     FILE: index.html
+     PURPOSE: Main HTML structure for Quran Tracker
+====================== -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quran Progress Tracker</title>
+  
+  <!-- ======================
+       META TAGS FOR SEO & PWA
+  ====================== -->
+  <meta name="description" content="Track your daily Quran reading, reflection, and progress with this beautiful modern tracker">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  
+  <!-- ======================
+       MANIFEST FOR PWA
+  ====================== -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🕌</text></svg>">
+  
+  <!-- ======================
+       FONTS SECTION
+  ====================== -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Amiri:wght@400;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  
+  <!-- ======================
+       STYLESHEET
+  ====================== -->
+  <link rel="stylesheet" href="styles.css" />
+  
+  <!-- ======================
+       ICONS LIBRARY
+  ====================== -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <!-- ======================
+       LOADING SCREEN
+  ====================== -->
+  <div id="loading-screen" class="loading-screen">
+    <div class="loading-content">
+      <div class="loading-icon">
+        <i class="fas fa-mosque"></i>
+      </div>
+      <h2>Quran Tracker</h2>
+      <div class="loading-progress">
+        <div class="loading-bar"></div>
+      </div>
+      <p class="loading-text">Loading blessings...</p>
+    </div>
+  </div>
+
+  <!-- ======================
+       SADAQAH MODAL SECTION
+  ====================== -->
+  <div id="sadaqah-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2><i class="fas fa-heart" style="color: #dc2626;"></i> Support This Project</h2>
+        <button id="close-modal" class="close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="donation-illustration">
+          <i class="fas fa-hands-helping" style="color: #0f766e;"></i>
+        </div>
+        <p class="modal-text">
+          Your sadaqah helps maintain and improve this app, allowing more people to benefit from Quranic reading and reflection.
+        </p>
+        <p class="modal-text">
+          <strong>"The example of those who spend their wealth in the way of Allah is like a seed which grows seven spikes; in each spike is a hundred grains." (Quran 2:261)</strong>
+        </p>
+        
+        <div class="donation-links">
+          <a href="https://buymeacoffee.com/shadowedscroll" target="_blank" class="donation-btn">
+            <i class="fas fa-coffee"></i> Buy Me A Coffee
+          </a>
+          <button id="copy-link" class="donation-btn secondary">
+            <i class="fas fa-copy"></i> Copy Donation Link
+          </button>
+        </div>
+        
+        <div class="alternative-support">
+          <h4><i class="fas fa-life-ring"></i> Other Ways to Support</h4>
+          <div class="support-options">
+            <a href="https://t.me/qurantrackerofficial" target="_blank" class="support-option">
+              <i class="fab fa-telegram"></i>
+              <span>Join Telegram Channel</span>
+            </a>
+            <button id="share-app" class="support-option">
+              <i class="fas fa-share-alt"></i>
+              <span>Share with Friends</span>
+            </button>
+          </div>
+        </div>
+        
+        <div class="copy-message" id="copy-message"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================
+       TOP BAR SECTION
+  ====================== -->
+  <header class="top-bar">
+    <div class="top-left">
+      <div class="avatar-container">
+        <img id="tg-avatar" class="avatar hidden" />
+        <div id="avatar-fallback" class="avatar-fallback">
+          <i class="fas fa-mosque"></i>
+        </div>
+      </div>
+      <div class="app-title">
+        <h1>Quran Tracker</h1>
+        <p class="app-subtitle">Track your daily Quran reading</p>
+      </div>
+    </div>
+
+    <!-- ======================
+         SADAQAH BUTTON
+    ====================== -->
+    <button id="sadaqah-btn" class="sadaqah-btn">
+      <i class="fas fa-heart" style="color: #dc2626; font-size: 1.2rem;"></i>
+      <span>Sadaqah</span>
+    </button>
+  </header>
+
+  <!-- ======================
+       STATUS MESSAGES CONTAINER
+  ====================== -->
+  <div id="status-messages"></div>
+
+  <!-- ======================
+       MAIN CONTENT SECTION
+  ====================== -->
+  <main>
+    <!-- ======================
+         HOME PAGE SECTION
+    ====================== -->
+    <section id="page-home" class="page active">
+      <!-- ======================
+           GREETING CARD
+      ====================== -->
+      <div class="card greeting-card">
+        <div class="greeting-content">
+          <div class="greeting-icon">
+            <i class="fas fa-hand-peace"></i>
+          </div>
+          <div class="greeting-text">
+            <h2 id="greeting">Assalamu'alaikum</h2>
+            <p id="date-time" class="date-display"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======================
+           DAILY VERSE CARD
+      ====================== -->
+      <div class="card daily-verse-card">
+        <h3><i class="fas fa-calendar-day"></i> Verse of the Day</h3>
+        <div class="daily-verse-content">
+          <p class="daily-verse-arabic">يَـٰٓأَيُّهَا ٱلَّذِينَ ءَامَنُوا۟ ٱتَّقُوا۟ ٱللَّـهَ حَقَّ تُقَاتِهِۦ وَلَا تَمُوتُنَّ إِلَّا وَأَنتُم مُّسْلِمُونَ</p>
+          <p class="daily-verse-translation">O you who have believed, fear Allah as He should be feared and do not die except as Muslims [in submission to Him].</p>
+          <p class="daily-verse-reference">Surah Al-Imran (3:102)</p>
+        </div>
+        <button id="refresh-verse" class="btn secondary small">
+          <i class="fas fa-sync-alt"></i> Another Verse
+        </button>
+      </div>
+
+      <!-- ======================
+           STATS CARD
+      ====================== -->
+      <div class="card stats-card">
+        <h3><i class="fas fa-chart-line"></i> Your Reading Stats</h3>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-value">0</div>
+            <div class="stat-label">Surahs Read</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">0:00</div>
+            <div class="stat-label">Time Spent</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">0</div>
+            <div class="stat-label">Days Streak</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======================
+           TRIVIA CARD
+      ====================== -->
+      <div class="card trivia-card">
+        <div class="card-header animated">
+          <h3><i class="fas fa-lightbulb"></i> Did You Know?</h3>
+          <div class="trivia-icon">
+            <i class="fas fa-quran"></i>
+          </div>
+        </div>
+        <div class="trivia-content">
+          <p id="trivia-text" class="trivia-text">The Quran contains exactly 114 surahs (chapters).</p>
+          <div class="progress-bar">
+            <div class="progress-fill"></div>
+          </div>
+          <button id="trivia-btn" class="btn pulse">
+            <i class="fas fa-sync-alt"></i> New Fact
+          </button>
+        </div>
+      </div>
+
+      <!-- ======================
+           QUICK ACTIONS
+      ====================== -->
+      <div class="card quick-actions">
+        <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+        <div class="actions-grid">
+          <button class="action-btn" data-page="read">
+            <i class="fas fa-book-open"></i>
+            <span>Read Now</span>
+          </button>
+          <button class="action-btn" data-page="settings">
+            <i class="fas fa-cog"></i>
+            <span>Settings</span>
+          </button>
+          <button class="action-btn" id="sadaqah-quick-btn">
+            <i class="fas fa-heart" style="color: #dc2626;"></i>
+            <span>Support</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================
+         READ PAGE SECTION
+    ====================== -->
+    <section id="page-read" class="page">
+      <div class="page-header">
+        <h2><i class="fas fa-book-reader"></i> Quran Reader</h2>
+        <p class="page-subtitle">Select a surah and translation to begin reading</p>
+      </div>
+
+      <!-- ======================
+           CONTROLS CARD
+      ====================== -->
+      <div class="card controls-card slide-in">
+        <div class="control-group">
+          <label for="surah-select"><i class="fas fa-list"></i> Select Surah</label>
+          <select id="surah-select" class="styled-select">
+            <option value="" disabled selected>Choose a surah...</option>
+          </select>
+        </div>
+        
+        <div class="control-group">
+          <label for="translation-select"><i class="fas fa-language"></i> Translation</label>
+          <select id="translation-select" class="styled-select">
+            <option value="en">English</option>
+            <option value="ms">Malay (MY)</option>
+            <option value="id">Indonesia</option>
+            <option value="ur">Urdu</option>
+            <option value="tr">Turkish</option>
+          </select>
+        </div>
+        
+        <div class="control-group">
+          <label for="font-size"><i class="fas fa-text-height"></i> Font Size</label>
+          <div class="slider-container">
+            <input type="range" id="font-size" min="14" max="30" value="20" class="slider">
+            <span id="font-size-value">20px</span>
+          </div>
+        </div>
+        
+        <button id="load-btn" class="btn load-btn">
+          <i class="fas fa-cloud-download-alt"></i> Load Surah
+        </button>
+      </div>
+
+      <!-- ======================
+           TIMER CARD
+      ====================== -->
+      <div class="card timer-card slide-in">
+        <div class="timer-display-container">
+          <div class="timer-icon">
+            <i class="fas fa-stopwatch"></i>
+          </div>
+          <div class="timer-content">
+            <h3>Reading Timer</h3>
+            <div id="timer-display" class="timer-display">00:00:00</div>
+            <div class="timer-controls">
+              <button id="timer-btn" class="btn timer-btn">
+                <i class="fas fa-play"></i> Start
+              </button>
+              <button id="reset-btn" class="btn secondary">
+                <i class="fas fa-redo"></i> Reset
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="timer-stats">
+          <p><i class="fas fa-info-circle"></i> Timer helps track your focused reading time</p>
+        </div>
+      </div>
+
+      <!-- ======================
+           READER SECTION
+      ====================== -->
+      <div id="reader" class="reader slide-in">
+        <div class="reader-placeholder">
+          <div class="placeholder-icon">
+            <i class="fas fa-quran"></i>
+          </div>
+          <h3>Select a Surah to Begin Reading</h3>
+          <p>Choose a surah from the dropdown and click "Load Surah" to start</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================
+         SETTINGS PAGE SECTION
+    ====================== -->
+    <section id="page-settings" class="page">
+      <div class="page-header">
+        <h2><i class="fas fa-cog"></i> Settings</h2>
+        <p class="page-subtitle">Customize your experience</p>
+      </div>
+
+      <!-- ======================
+           ABOUT CARD
+      ====================== -->
+      <div class="card settings-card">
+        <div class="settings-icon">
+          <i class="fas fa-info-circle"></i>
+        </div>
+        <div class="settings-content">
+          <h3>About This App</h3>
+          <p>
+            A modern Quran progress tracker designed for daily reading,
+            reflection, and consistency. Built with care to help you
+            maintain a meaningful connection with the Quran.
+          </p>
+          <div class="app-info">
+            <div class="app-version">Version 1.0.0</div>
+            <div class="app-build">Pure Quran Tracker</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======================
+           HOW TO USE CARD
+      ====================== -->
+      <div class="card settings-card">
+        <div class="settings-icon">
+          <i class="fas fa-question-circle"></i>
+        </div>
+        <div class="settings-content">
+          <h3>How to Use</h3>
+          <ol class="instructions-list">
+            <li><span>Select a surah and translation from the Read page</span></li>
+            <li><span>Start reading and use the timer to track your focus time</span></li>
+            <li><span>Check your reading stats on the Home page</span></li>
+            <li><span>Support the project via Sadaqah to help it grow</span></li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- ======================
+           FEATURES CARD
+      ====================== -->
+      <div class="card settings-card">
+        <div class="settings-icon">
+          <i class="fas fa-star"></i>
+        </div>
+        <div class="settings-content">
+          <h3>Features</h3>
+          <div class="features-grid">
+            <div class="feature-item">
+              <i class="fas fa-book"></i>
+              <span>Full Quran text</span>
+            </div>
+            <div class="feature-item">
+              <i class="fas fa-globe"></i>
+              <span>Multiple translations</span>
+            </div>
+            <div class="feature-item">
+              <i class="fas fa-stopwatch"></i>
+              <span>Reading timer</span>
+            </div>
+            <div class="feature-item">
+              <i class="fas fa-chart-bar"></i>
+              <span>Progress tracking</span>
+            </div>
+            <div class="feature-item">
+              <i class="fas fa-heart"></i>
+              <span>Sadaqah support</span>
+            </div>
+            <div class="feature-item">
+              <i class="fas fa-mobile-alt"></i>
+              <span>Mobile optimized</span>
+            </div>
+            <div class="feature-item">
+              <i class="fas fa-shield-alt"></i>
+              <span>Privacy focused</span>
+            </div>
+            <div class="feature-item">
+              <i class="fas fa-pray"></i>
+              <span>Daily verses</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ======================
+           SUPPORT CARD
+      ====================== -->
+      <div class="card settings-card highlight">
+        <div class="settings-icon">
+          <i class="fas fa-hands-helping"></i>
+        </div>
+        <div class="settings-content">
+          <h3>Support the Project</h3>
+          <p>
+            Your support helps maintain and improve this app, allowing more
+            people to benefit from Quranic reading and reflection.
+          </p>
+          <button id="support-btn" class="btn support-btn">
+            <i class="fas fa-heart" style="color: #dc2626;"></i> Make Sadaqah
+          </button>
+          <div class="alternative-links">
+            <a href="https://t.me/qurantrackerofficial" target="_blank" class="alt-link">
+              <i class="fab fa-telegram"></i> Telegram Channel
+            </a>
+          </div>
+          <div class="support-note">
+            <i class="fas fa-quote-left"></i>
+            "The example of those who spend their wealth in the way of Allah is like a seed which grows seven spikes; in each spike is a hundred grains." (Quran 2:261)
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ======================
+       BOTTOM NAVIGATION
+  ====================== -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-page="home">
+      <i class="fas fa-home"></i>
+      <span>Home</span>
+    </button>
+    <button class="nav-btn" data-page="read">
+      <i class="fas fa-book-open"></i>
+      <span>Read</span>
+    </button>
+    <button class="nav-btn" data-page="settings">
+      <i class="fas fa-cog"></i>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <!-- ======================
+       APP SCRIPT
+  ====================== -->
+  <script src="surah-info.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
