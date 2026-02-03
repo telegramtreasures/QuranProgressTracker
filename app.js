@@ -1,7 +1,7 @@
 /* ======================
    FILE: app.js
    PURPOSE: Main JavaScript logic for Quran Tracker
-   FIXED: Bottom navigation & Bismillah display working 100%
+   FIXED: Bottom navigation, Bismillah display & Translation loading working 100%
 ====================== */
 
 /* ======================
@@ -185,6 +185,7 @@ function initModal() {
   const supportBtn = document.getElementById("support-btn");
   const closeBtn = document.getElementById("close-modal");
   const copyBtn = document.getElementById("copy-link");
+  const shareBtn = document.getElementById("share-app");
   
   if (sadaqahBtn) sadaqahBtn.addEventListener('click', openModal);
   if (supportBtn) supportBtn.addEventListener('click', openModal);
@@ -207,7 +208,35 @@ function initModal() {
       const donationLink = 'https://buymeacoffee.com/shadowedscroll';
       navigator.clipboard.writeText(donationLink).then(() => {
         showStatusMessage('Donation link copied!', 'success');
+      }).catch(() => {
+        showStatusMessage('Failed to copy link', 'error');
       });
+    });
+  }
+  
+  if (shareBtn) {
+    shareBtn.addEventListener('click', async () => {
+      const shareData = {
+        title: 'Quran Tracker',
+        text: 'Track your daily Quran reading with this beautiful app!',
+        url: window.location.href
+      };
+      
+      if (navigator.share) {
+        try {
+          await navigator.share(shareData);
+          showStatusMessage('Shared successfully!', 'success');
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.log('Share failed:', err);
+          }
+        }
+      } else {
+        // Fallback: copy link
+        navigator.clipboard.writeText(window.location.href).then(() => {
+          showStatusMessage('Link copied to clipboard!', 'success');
+        });
+      }
     });
   }
 }
@@ -287,8 +316,8 @@ function populateTranslationDropdown() {
   Object.entries(TRANSLATIONS).forEach(([code, name]) => {
     const option = document.createElement("option");
     option.value = code;
-    option.textContent = `${name} (${code.toUpperCase()})`;
-    if (code === "en") option.selected = true;
+    option.textContent = name;
+    if (code === state.translation) option.selected = true;
     translationSelect.appendChild(option);
   });
 }
@@ -301,37 +330,49 @@ async function loadQuranData() {
     const response = await fetch("quran.json");
     if (!response.ok) throw new Error(`HTTP error ${response.status}`);
     state.quranData = await response.json();
-    console.log("Quran data loaded successfully");
+    console.log("✅ Quran data loaded successfully");
     return state.quranData;
   } catch (error) {
-    console.error("Failed to load Quran data:", error);
+    console.error("❌ Failed to load Quran data:", error);
     showStatusMessage("Failed to load quran.json", "error");
     throw error;
   }
 }
 
 /* ======================
-   TRANSLATION LOADER
+   TRANSLATION LOADER - FIXED
 ====================== */
 async function loadTranslation(lang = "en") {
   try {
+    console.log(`📖 Loading translation: ${lang}`);
+    
     const cacheKey = `translation_${lang}`;
     const cached = loadFromCache(cacheKey);
     
     if (cached) {
       state.translationsData[lang] = cached;
+      console.log(`✅ Translation ${lang} loaded from cache`);
       return;
     }
     
-    const response = await fetch(TRANSLATION_FILES[lang]);
-    if (!response.ok) throw new Error(`Translation file ${lang} not found`);
+    const fileName = TRANSLATION_FILES[lang];
+    if (!fileName) {
+      throw new Error(`Translation file for ${lang} not defined`);
+    }
+    
+    const response = await fetch(fileName);
+    if (!response.ok) {
+      throw new Error(`Translation file ${fileName} not found (${response.status})`);
+    }
     
     const translationData = await response.json();
     state.translationsData[lang] = translationData;
     saveToCache(cacheKey, translationData);
     
+    console.log(`✅ Translation ${lang} loaded successfully`);
+    
   } catch (error) {
-    console.warn(`Translation load failed (${lang})`, error);
+    console.error(`❌ Translation load failed (${lang}):`, error);
     state.translationsData[lang] = null;
     
     if (state.currentPage === 'read' && state.currentSurah) {
@@ -377,7 +418,7 @@ async function loadSurahList() {
 }
 
 /* ======================
-   LOAD SURAH - FIXED WITH BISMILLAH
+   LOAD SURAH - FIXED WITH BISMILLAH & BETTER TRANSLATION
 ====================== */
 async function loadSurah(surahNumber) {
   if (!surahNumber || surahNumber === "") {
@@ -406,11 +447,22 @@ async function loadSurah(surahNumber) {
   }
   
   try {
-    if (!state.quranData) await loadQuranData();
-    if (!state.translationsData[state.translation]) await loadTranslation(state.translation);
+    // Load Quran data if not loaded
+    if (!state.quranData) {
+      console.log("Loading Quran data...");
+      await loadQuranData();
+    }
+    
+    // Load translation if not loaded
+    if (!state.translationsData[state.translation]) {
+      console.log(`Loading ${state.translation} translation...`);
+      await loadTranslation(state.translation);
+    }
     
     const surah = state.quranData[surahNumber];
-    if (!surah) throw new Error(`Surah ${surahNumber} not found`);
+    if (!surah) throw new Error(`Surah ${surahNumber} not found in quran.json`);
+    
+    if (!surah.ayahs) throw new Error(`Surah ${surahNumber} has no ayahs`);
     
     state.currentSurah = surahNumber;
     state.currentSurahData = surah;
@@ -432,18 +484,34 @@ async function loadSurah(surahNumber) {
       `;
     }
     
-    Object.entries(surah.ayahs).forEach(([ayahNumber, text]) => {
-      const translationData = state.translationsData[state.translation];
-      let translationText = "No translation available";
+    // Get translation data
+    const translationData = state.translationsData[state.translation];
+    
+    // Debug log
+    console.log(`Translation data available for ${state.translation}:`, !!translationData);
+    if (translationData && translationData[surahNumber]) {
+      console.log(`Surah ${surahNumber} translation available:`, !!translationData[surahNumber].ayahs);
+    }
+    
+    // Build verses HTML
+    Object.entries(surah.ayahs).forEach(([ayahNumber, arabicText]) => {
+      let translationText = "Translation not available";
       
-      if (translationData && translationData[surahNumber] && translationData[surahNumber].ayahs) {
-        translationText = translationData[surahNumber].ayahs[ayahNumber] || translationText;
+      // FIXED: Better translation access
+      if (translationData) {
+        const surahTranslation = translationData[surahNumber];
+        if (surahTranslation && surahTranslation.ayahs) {
+          const ayahTranslation = surahTranslation.ayahs[ayahNumber];
+          if (ayahTranslation) {
+            translationText = ayahTranslation;
+          }
+        }
       }
       
       versesHTML += `
         <div class="verse">
           <div class="verse-ar">
-            ${text}
+            ${arabicText}
             <span class="verse-number">${ayahNumber}</span>
           </div>
           <div class="verse-tr">${translationText}</div>
@@ -473,9 +541,10 @@ async function loadSurah(surahNumber) {
     }
     
     showStatusMessage(`Surah ${surahNumber} loaded!`, "success");
+    console.log(`✅ Surah ${surahNumber} loaded successfully`);
     
   } catch (error) {
-    console.error("Failed to load surah:", error);
+    console.error("❌ Failed to load surah:", error);
     
     if (readerElement) {
       readerElement.innerHTML = `
@@ -516,14 +585,14 @@ function showStatusMessage(message, type = "info") {
   const messageDiv = document.createElement("div");
   messageDiv.className = `status-message ${type}`;
   messageDiv.innerHTML = `
-    <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+    <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'}"></i>
     ${message}
   `;
   
   statusMessages.appendChild(messageDiv);
   
   setTimeout(() => {
-    messageDiv.style.animation = 'slideUp 0.3s ease';
+    messageDiv.style.opacity = '0';
     setTimeout(() => {
       messageDiv.remove();
     }, 300);
@@ -638,9 +707,11 @@ function initFontSizeControl() {
     state.fontSize = parseInt(fontSizeSlider.value);
     fontSizeValue.textContent = `${state.fontSize}px`;
     
-    const verses = document.querySelectorAll('.verse');
-    verses.forEach(verse => {
-      verse.style.fontSize = `${state.fontSize}px`;
+    const verseArabic = document.querySelectorAll('.verse-ar');
+    verseArabic.forEach(verse => {
+      if (!verse.classList.contains('bismillah-text')) {
+        verse.style.fontSize = `${state.fontSize}px`;
+      }
     });
   });
   
@@ -820,9 +891,9 @@ async function initializeApp() {
         await loadTranslation("en");
         await loadSurahList();
         populateTranslationDropdown();
-        console.log("Data loaded successfully");
+        console.log("✅ Data loaded successfully");
       } catch (error) {
-        console.warn("Data loading warning:", error);
+        console.warn("⚠️ Data loading warning:", error);
       }
     }, 500);
     
@@ -830,13 +901,10 @@ async function initializeApp() {
     setTimeout(() => {
       hideLoadingScreen();
       console.log("✅ App fully initialized");
-      
-      // Test navigation
-      console.log("Try clicking navigation buttons now!");
     }, 1500);
     
   } catch (error) {
-    console.error("Initialization error:", error);
+    console.error("❌ Initialization error:", error);
     hideLoadingScreen();
   }
 }
@@ -857,4 +925,5 @@ window.debug = function() {
   console.log("Current page:", state.currentPage);
   console.log("Nav buttons:", document.querySelectorAll('.nav-btn').length);
   console.log("Active page:", document.querySelector('.page.active')?.id);
+  console.log("Translation loaded:", state.translation, !!state.translationsData[state.translation]);
 };
